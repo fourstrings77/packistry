@@ -11,6 +11,7 @@ use App\Http\Controllers\DeployTokenController;
 use App\Http\Controllers\PackageController;
 use App\Http\Controllers\PersonalTokenController;
 use App\Http\Controllers\RepositoryController;
+use App\Http\Controllers\RepositoryDeployTokenController;
 use App\Http\Controllers\SourceController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VersionController;
@@ -64,6 +65,12 @@ Route::middleware('web')->prefix('/api')->group(function (): void {
 
         Route::apiResource('/repositories', RepositoryController::class)
             ->only(['index', 'store', 'destroy', 'update']);
+
+        Route::prefix('/repositories/{repository}/deploy-tokens')
+            ->controller(RepositoryDeployTokenController::class)
+            ->group(function (): void {
+                Route::post('/', 'store');
+            });
 
         Route::apiResource('/packages', PackageController::class)
             ->only(['index', 'store', 'destroy', 'show']);

@@ -8,6 +8,8 @@ enum TokenAbility: string
 {
     case REPOSITORY_READ = 'repository:read';
     case REPOSITORY_WRITE = 'repository:write';
+    case PACKAGE_UPLOAD = 'package:upload';
+    case DEPLOY_TOKEN_CREATE = 'deploy-token:create';
 
     /**
      * @return TokenAbility[]

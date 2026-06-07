@@ -12,14 +12,15 @@ use App\Http\Controllers\RepositoryAwareController;
 use App\Http\Resources\ComposerPackageResource;
 use App\Http\Resources\VersionResource;
 use App\Models\Contracts\Tokenable;
+use App\Models\DeployToken;
 use App\Models\Package;
+use App\Models\User;
 use App\Models\Version;
 use App\Normalizer;
 use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -197,7 +198,7 @@ class RepositoryController extends RepositoryAwareController
 
     public function upload(Request $request): JsonResponse
     {
-        $this->authorize(TokenAbility::REPOSITORY_WRITE);
+        $this->authorizeUpload();
 
         $vendor = $request->route('vendor');
         $name = $request->route('name');
@@ -219,9 +220,9 @@ class RepositoryController extends RepositoryAwareController
 
         if (
             ! $token->isUnscoped()
-            && ! $this->tokenHasRepositoryAccess($token, $repository->id)
+            && ! $this->tokenHasExplicitRepositoryAccess($token, $repository->id)
         ) {
-            if (is_null($package) || ! $this->tokenHasPackageAccess($token, $package->id)) {
+            if (is_null($package) || ! $this->tokenHasExplicitPackageAccess($token, $package->id)) {
                 abort(404);
             }
         }
@@ -252,19 +253,45 @@ class RepositoryController extends RepositoryAwareController
         return response()->json(new VersionResource($version), 201);
     }
 
-    private function tokenHasRepositoryAccess(Tokenable $token, int $repositoryId): bool
+    private function authorizeUpload(): void
     {
-        return DB::query()
-            ->fromSub($token->accessibleRepositoryIdsQuery(), 'accessible_repositories')
-            ->where('id', $repositoryId)
-            ->exists();
+        $token = $this->token();
+
+        if (
+            is_null($token)
+            || $token->currentAccessToken()->isExpired()
+            || (
+                ! $token->tokenCan(TokenAbility::PACKAGE_UPLOAD->value)
+                && ! $token->tokenCan(TokenAbility::REPOSITORY_WRITE->value)
+            )
+        ) {
+            abort(401);
+        }
     }
 
-    private function tokenHasPackageAccess(Tokenable $token, int $packageId): bool
+    private function tokenHasExplicitRepositoryAccess(Tokenable $token, int $repositoryId): bool
     {
-        return DB::query()
-            ->fromSub($token->accessiblePackageIdsQuery(), 'accessible_packages')
-            ->where('id', $packageId)
-            ->exists();
+        return match (true) {
+            $token instanceof User => $token->repositories()
+                ->whereKey($repositoryId)
+                ->exists(),
+            $token instanceof DeployToken => $token->repositories()
+                ->whereKey($repositoryId)
+                ->exists(),
+            default => false,
+        };
+    }
+
+    private function tokenHasExplicitPackageAccess(Tokenable $token, int $packageId): bool
+    {
+        return match (true) {
+            $token instanceof User => $token->packages()
+                ->whereKey($packageId)
+                ->exists(),
+            $token instanceof DeployToken => $token->packages()
+                ->whereKey($packageId)
+                ->exists(),
+            default => false,
+        };
     }
 }
