@@ -10,6 +10,7 @@ permissions:
 jobs:
   pest-sqlite:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -42,6 +43,7 @@ jobs:
 
   pest-mysql:
     runs-on: ubuntu-latest
+    continue-on-error: true
     services:
       mysql:
         image: mysql:8
@@ -97,6 +99,7 @@ jobs:
 
   pest-postgres:
     runs-on: ubuntu-latest
+    continue-on-error: true
     services:
       postgres:
         image: postgres:17

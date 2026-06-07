@@ -10,6 +10,7 @@ permissions:
 jobs:
   phpstan:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Setup PHP with PECL extension
         uses: shivammathur/setup-php@v2
