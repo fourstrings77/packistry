@@ -8,6 +8,7 @@ use App\Models\Contracts\Tokenable;
 use App\Models\Token;
 use DateTimeInterface;
 use Laravel\Sanctum\NewAccessToken;
+use RuntimeException;
 
 /**
  * @phpstan-require-implements Tokenable
@@ -36,9 +37,18 @@ trait HasApiTokens
 
     public function currentAccessToken(): Token
     {
+        if (! $this->hasCurrentAccessToken()) {
+            throw new RuntimeException('No current access token is available');
+        }
+
         /** @var Token $token */
         $token = $this->accessToken;
 
         return $token;
+    }
+
+    public function hasCurrentAccessToken(): bool
+    {
+        return $this->accessToken instanceof Token;
     }
 }

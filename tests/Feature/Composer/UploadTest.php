@@ -82,12 +82,12 @@ it('creates new version for existing package', function (Repository $repository,
     ->with(guestAndTokens(
         abilities: TokenAbility::REPOSITORY_WRITE,
         guestStatus: 401,
-        personalTokenWithoutAccessStatus: 201,
+        personalTokenWithoutAccessStatus: 404,
         personalTokenWithAccessStatus: 201,
         unscopedPersonalTokenWithoutAccessStatus: 201,
-        deployTokenWithoutAccessStatus: 201,
+        deployTokenWithoutAccessStatus: 404,
         deployTokenWithAccessStatus: 201,
-        deployTokenWithoutPackagesStatus: 201,
+        deployTokenWithoutPackagesStatus: 404,
     ));
 
 it('creates new package and version when non existing', function (Repository $repository, ?Authenticatable $auth, int $status): void {
@@ -148,12 +148,12 @@ it('creates new package and version when non existing', function (Repository $re
     ->with(guestAndTokens(
         abilities: TokenAbility::REPOSITORY_WRITE,
         guestStatus: 401,
-        personalTokenWithoutAccessStatus: 201,
+        personalTokenWithoutAccessStatus: 404,
         personalTokenWithAccessStatus: 201,
         unscopedPersonalTokenWithoutAccessStatus: 201,
-        deployTokenWithoutAccessStatus: 201,
+        deployTokenWithoutAccessStatus: 404,
         deployTokenWithAccessStatus: 201,
-        deployTokenWithoutPackagesStatus: 201,
+        deployTokenWithoutPackagesStatus: 404,
     ));
 
 it('creates package in private repository', function (Repository $repository, ?Authenticatable $auth, int $status): void {
@@ -166,13 +166,56 @@ it('creates package in private repository', function (Repository $repository, ?A
     ->with(guestAndTokens(
         abilities: TokenAbility::REPOSITORY_WRITE,
         guestStatus: 401,
-        personalTokenWithoutAccessStatus: 422,
+        personalTokenWithoutAccessStatus: 404,
         personalTokenWithAccessStatus: 422,
         unscopedPersonalTokenWithoutAccessStatus: 422,
-        deployTokenWithoutAccessStatus: 422,
+        deployTokenWithoutAccessStatus: 404,
         deployTokenWithAccessStatus: 422,
-        deployTokenWithoutPackagesStatus: 422,
+        deployTokenWithoutPackagesStatus: 404,
     ));
+
+it('creates new version with package upload ability', function (): void {
+    Storage::fake();
+
+    $repository = repository(public: true, closure: fn (RepositoryFactory $factory) => $factory->has(
+        Package::factory()->state(['name' => 'test/test'])
+    ));
+
+    deployToken(TokenAbility::PACKAGE_UPLOAD, withAccess: true);
+
+    $file = UploadedFile::fake()
+        ->createWithContent(
+            name: 'project.zip',
+            content: (string) file_get_contents(__DIR__.'/../../Fixtures/project.zip')
+        );
+
+    post($repository->url('/test/test'), ['file' => $file])
+        ->assertStatus(201);
+});
+
+it('creates new version from zip with implicit wrapper directory', function (): void {
+    Storage::fake();
+
+    $repository = repository(public: true, closure: fn (RepositoryFactory $factory) => $factory->has(
+        Package::factory()->state(['name' => 'test/test'])
+    ));
+
+    deployToken(TokenAbility::PACKAGE_UPLOAD, withAccess: true);
+
+    $file = UploadedFile::fake()
+        ->createWithContent(
+            name: 'project.zip',
+            content: wrappedProjectZipContent()
+        );
+
+    post($repository->url('/test/test'), ['file' => $file])
+        ->assertStatus(201);
+
+    /** @var Version $version */
+    $version = Version::query()->firstOrFail();
+
+    expect($version->name)->toBe('1.0.0');
+});
 
 it('allows package-scoped deploy token to upload for allowed package', function (): void {
     Storage::fake();
@@ -214,7 +257,7 @@ it('denies package-scoped deploy token upload for package without access', funct
         );
 
     post($repository->url('/test/test'), ['file' => $file])
-        ->assertStatus(201);
+        ->assertStatus(404);
 });
 
 it('denies package-scoped deploy token creating a new package', function (): void {
@@ -235,5 +278,38 @@ it('denies package-scoped deploy token creating a new package', function (): voi
         );
 
     post($repository->url('/test/test'), ['file' => $file])
-        ->assertStatus(201);
+        ->assertStatus(404);
 });
+
+function wrappedProjectZipContent(): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'packistry-test-zip-');
+
+    if ($path === false) {
+        throw new RuntimeException('failed to create temporary zip path');
+    }
+
+    $zip = new ZipArchive;
+
+    expect($zip->open($path, ZipArchive::OVERWRITE))->toBeTrue();
+
+    $zip->addFromString('Project/.claude/settings.local.json', '{}');
+    $zip->addFromString('Project/composer.json', json_encode([
+        'name' => 'test/test',
+        'description' => 'description',
+        'version' => '1.0.0',
+        'require' => [],
+    ], JSON_THROW_ON_ERROR));
+    $zip->addFromString('Project/src/Test.php', '<?php');
+    $zip->close();
+
+    $contents = file_get_contents($path);
+
+    unlink($path);
+
+    if ($contents === false) {
+        throw new RuntimeException('failed to read temporary zip');
+    }
+
+    return $contents;
+}

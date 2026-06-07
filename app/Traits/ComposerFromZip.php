@@ -24,13 +24,7 @@ trait ComposerFromZip
         }
 
         try {
-            $directory = $this->directoryFromArchive($zip);
-
-            $index = $zip->locateName($directory.'composer.json');
-
-            if ($index === false) {
-                return throw new ComposerJsonNotFoundException('composer.json not found in archive');
-            }
+            $index = $this->composerJsonIndexFromArchive($zip);
 
             $content = $zip->getFromIndex($index);
 
@@ -40,7 +34,7 @@ trait ComposerFromZip
 
             $decoded = json_decode($content, true);
 
-            if ($decoded === false) {
+            if (! is_array($decoded)) {
                 return throw new ComposerJsonNotFoundException('composer.json not found in archive');
             }
 
@@ -51,18 +45,47 @@ trait ComposerFromZip
     }
 
     /**
-     * @throws FailedToOpenArchiveException
+     * @throws ComposerJsonNotFoundException|FailedToOpenArchiveException
      */
-    private function directoryFromArchive(ZipArchive $zip): string
+    private function composerJsonIndexFromArchive(ZipArchive $zip): int
     {
-        $directory = $zip->getNameIndex(0);
+        $rootIndex = $zip->locateName('composer.json');
 
-        if ($directory === false) {
-            throw new FailedToOpenArchiveException('failed to determine directory name');
+        if ($rootIndex !== false) {
+            return $rootIndex;
         }
 
-        return str_ends_with($directory, '/')
-            ? $directory
-            : '';
+        $topLevelDirectories = [];
+
+        for ($index = 0; $index < $zip->numFiles; $index++) {
+            $name = $zip->getNameIndex($index);
+
+            if ($name === false) {
+                throw new FailedToOpenArchiveException('failed to determine archive entry name');
+            }
+
+            $name = trim($name, '/');
+
+            if ($name === '' || ! str_contains($name, '/')) {
+                continue;
+            }
+
+            [$directory] = explode('/', $name, 2);
+            $topLevelDirectories[$directory] = true;
+        }
+
+        if (count($topLevelDirectories) !== 1) {
+            throw new ComposerJsonNotFoundException('composer.json not found in archive');
+        }
+
+        $directory = array_key_first($topLevelDirectories);
+        /** @var string $directory */
+        $index = $zip->locateName($directory.'/composer.json');
+
+        if ($index === false) {
+            throw new ComposerJsonNotFoundException('composer.json not found in archive');
+        }
+
+        return $index;
     }
 }
